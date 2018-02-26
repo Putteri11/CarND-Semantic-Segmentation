@@ -4,7 +4,8 @@ import helper
 import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
-
+import time
+import scipy
 
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
@@ -93,14 +94,18 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
 
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = nn_last_layer, labels = correct_label))
 
+    regularization_loss = tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
+
+    loss = cross_entropy_loss + regularization_loss
+
     optimizer = tf.train.AdamOptimizer(learning_rate)
 
-    train_op = optimizer.minimize(cross_entropy_loss)
+    train_op = optimizer.minimize(loss)
 
     logits = tf.reshape(nn_last_layer, (-1, num_classes))
     #logits = nn_last_layer
 
-    return logits, train_op, cross_entropy_loss
+    return logits, train_op, loss
 tests.test_optimize(optimize)
 
 
@@ -124,12 +129,14 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     print("Training...")
     print()
     for epoch in range(epochs):
-        for img, label in get_batches_fn(batch_size):
-            sess.run(train_op, feed_dict = {input_image: img, correct_label: label, keep_prob: 0.5})
-
-
         print("Epoch {} ...".format(epoch + 1))
-        print("Loss: {}".format(cross_entropy_loss))
+        t1 = time.time()
+        for img, label in get_batches_fn(batch_size):
+            _, loss = sess.run([train_op, cross_entropy_loss], feed_dict = {input_image: img, correct_label: label, keep_prob: 0.5})
+
+        t2 = time.time()
+        print("... took {} minutes, {} seconds".format(round((t2 - t1) / 60), round((t2 - t1) % 60)))
+        print("Loss: {}".format(loss))
         print()
 
     pass
@@ -156,15 +163,18 @@ def run():
         # Create function to get batches
         get_batches_fn = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
 
+        model_file = "model"
+        builder = tf.saved_model.builder.SavedModelBuilder(model_file)
+
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
 
         # TODO: Build NN using load_vgg, layers, and optimize function
 
         label = tf.placeholder(tf.float32, (None, None, None, num_classes))
-        keep_prob = tf.placeholder(tf.float32)
+        #keep_prob = tf.placeholder(tf.float32)
         rate = 0.001
-        n_epochs = 2
+        n_epochs = 1
         batch_size = 40
 
         input_image, keep, w3, w4, w7 = load_vgg(sess, vgg_path)
@@ -177,11 +187,22 @@ def run():
 
         sess.run(tf.global_variables_initializer())
 
-        train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             label, keep_prob, rate)
+        test_image = scipy.misc.imread(os.path.join(data_dir, 'data_road/testing/image_2/um_000000.png'))
+
+        print("Test image shape: ", test_image.shape)
+
+        inp = input("Train model [(Y)/n]? ")
+
+        if (inp == "n"):
+            tf.saved_model.loader.load(sess, ["fcn"], "./model")
+        else:
+            train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image, label, keep, rate)
+            builder.add_meta_graph_and_variables(sess, ["fcn"])
+            builder.save()
+
 
         # TODO: Save inference data using helper.save_inference_samples
-        helper.save_inference_samples(runs_dir, data_dir, sess, input_image.shape, logits, keep_prob, input_image)
+        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep, input_image)
 
         
 
