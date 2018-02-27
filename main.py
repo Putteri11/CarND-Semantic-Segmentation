@@ -5,7 +5,7 @@ import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
 import time
-import scipy
+
 
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
@@ -109,8 +109,7 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
 tests.test_optimize(optimize)
 
 
-def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
-             correct_label, keep_prob, learning_rate):
+def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, loss, input_image, correct_label, keep_prob, learning_rate):#, logits, num_classes):
     """
     Train neural network and print out the loss during training.
     :param sess: TF Session
@@ -125,23 +124,47 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param learning_rate: TF Placeholder for learning rate
     """
     # TODO: Implement function
+    """
+    prediction = tf.argmax(logits, 1)
+    correct = tf.argmax(tf.reshape(correct_label, (-1, num_classes)), 1)
 
+    mean_iou, _ = tf.metrics.mean_iou(correct, prediction, num_classes)
+    """
     print("Training...")
     print()
     for epoch in range(epochs):
         print("Epoch {} ...".format(epoch + 1))
         t1 = time.time()
         for img, label in get_batches_fn(batch_size):
-            _, loss = sess.run([train_op, cross_entropy_loss], feed_dict = {input_image: img, correct_label: label, keep_prob: 0.5})
+            _, _loss = sess.run([train_op, loss], feed_dict = {input_image: img, correct_label: label, keep_prob: 0.5})
+
+            #m_iou = sess.run(mean_iou, feed_dict = {input_image: img, correct_label: label, keep_prob: 1.0})
 
         t2 = time.time()
         print("... took {} minutes, {} seconds".format(round((t2 - t1) / 60), round((t2 - t1) % 60)))
-        print("Loss: {}".format(loss))
+        print("Loss: {}".format(_loss))
+        #print("Mean iou: {}".format(m_iou))
         print()
 
     pass
 tests.test_train_nn(train_nn)
 
+"""
+def evaluate(sess):
+
+    for image_file in glob(os.path.join(data_folder, 'image_2', '*.png')):
+        image = scipy.misc.imresize(scipy.misc.imread(image_file), image_shape)
+
+        im_softmax = sess.run(
+            [tf.nn.softmax(logits)],
+            {keep_prob: 1.0, image_pl: [image]})
+        im_softmax = im_softmax[0][:, 1].reshape(image_shape[0], image_shape[1])
+        segmentation = (im_softmax > 0.5).reshape(image_shape[0], image_shape[1], 1)
+    
+    iou = 0
+
+    return iou
+"""
 
 def run():
     num_classes = 2
@@ -163,7 +186,7 @@ def run():
         # Create function to get batches
         get_batches_fn = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
 
-        model_file = "model"
+        model_file = os.path.join(data_dir, "model", str(time.time()))
         builder = tf.saved_model.builder.SavedModelBuilder(model_file)
 
         # OPTIONAL: Augment Images for better results
@@ -174,29 +197,25 @@ def run():
         label = tf.placeholder(tf.float32, (None, None, None, num_classes))
         #keep_prob = tf.placeholder(tf.float32)
         rate = 0.001
-        n_epochs = 1
-        batch_size = 40
+        n_epochs = 2
+        batch_size = 80
 
         input_image, keep, w3, w4, w7 = load_vgg(sess, vgg_path)
 
         output_layer = layers(w3, w4, w7, num_classes)
 
-        logits, train_op, cross_entropy_loss = optimize(nn_last_layer = output_layer, correct_label = label, learning_rate = rate, num_classes = num_classes)
+        logits, train_op, loss = optimize(nn_last_layer = output_layer, correct_label = label, learning_rate = rate, num_classes = num_classes)
 
         # TODO: Train NN using the train_nn function
 
         sess.run(tf.global_variables_initializer())
-
-        test_image = scipy.misc.imread(os.path.join(data_dir, 'data_road/testing/image_2/um_000000.png'))
-
-        print("Test image shape: ", test_image.shape)
 
         inp = input("Train model [(Y)/n]? ")
 
         if (inp == "n"):
             tf.saved_model.loader.load(sess, ["fcn"], "./model")
         else:
-            train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image, label, keep, rate)
+            train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image, label, keep, rate)
             builder.add_meta_graph_and_variables(sess, ["fcn"])
             builder.save()
 
