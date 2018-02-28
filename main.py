@@ -5,7 +5,7 @@ import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
 import time
-
+import shutil
 
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
@@ -171,6 +171,7 @@ def run():
     image_shape = (160, 576)
     data_dir = './data'
     runs_dir = './runs'
+    print(os.listdir(data_dir))
     tests.test_for_kitti_dataset(data_dir)
 
     # Download pretrained vgg model
@@ -185,9 +186,6 @@ def run():
         vgg_path = os.path.join(data_dir, 'vgg')
         # Create function to get batches
         get_batches_fn = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
-
-        model_file = os.path.join(data_dir, "model", str(time.time()))
-        builder = tf.saved_model.builder.SavedModelBuilder(model_file)
 
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
@@ -209,15 +207,24 @@ def run():
         # TODO: Train NN using the train_nn function
 
         sess.run(tf.global_variables_initializer())
-
+        """
         inp = input("Train model [(Y)/n]? ")
 
+        model_path = os.path.join(data_dir, "model")
+
         if (inp == "n"):
-            tf.saved_model.loader.load(sess, ["fcn"], "./model")
+            tf.saved_model.loader.load(sess, ["fcn"], model_path)
         else:
-            train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image, label, keep, rate)
-            builder.add_meta_graph_and_variables(sess, ["fcn"])
-            builder.save()
+            try:
+                builder = tf.saved_model.builder.SavedModelBuilder(model_path)
+            except:
+                shutil.rmtree(model_path)
+                builder = tf.saved_model.builder.SavedModelBuilder(model_path)
+        """
+        train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image, label, keep, rate)
+
+        #builder.add_meta_graph_and_variables(sess, ["fcn"])
+        #builder.save()
 
 
         # TODO: Save inference data using helper.save_inference_samples
