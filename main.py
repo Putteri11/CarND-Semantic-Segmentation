@@ -182,8 +182,8 @@ def run():
 
         label = tf.placeholder(tf.float32, (None, None, None, num_classes))
         #keep_prob = tf.placeholder(tf.float32)
-        rate = 0.001
-        n_epochs = 20
+        rate = 0.0001
+        n_epochs = 25
         batch_size = 8
 
         input_image, keep, w3, w4, w7 = load_vgg(sess, vgg_path)
