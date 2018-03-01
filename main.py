@@ -59,23 +59,27 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
 
     # upsampling: 2, 2 and 8
 
+    # scale vgg pooling layers
+    layer3_out_scaled = tf.multiply(vgg_layer3_out, 0.0001, name='layer3_out_scaled')
+    layer4_out_scaled = tf.multiply(vgg_layer4_out, 0.01, name='layer4_out_scaled')
+
     # 1 by 1 convolution
-    conv_1x1 = tf.layers.conv2d(vgg_layer7_out, num_classes, 1, 1, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3))
+    conv_1x1 = tf.layers.conv2d(vgg_layer7_out, num_classes, 1, 1, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3), kernel_initializer=tf.truncated_normal_initializer(stddev=0.001))
 
     # upsample by 2
-    output = tf.layers.conv2d_transpose(conv_1x1, num_classes, 4, 2, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3))
+    upsample1 = tf.layers.conv2d_transpose(conv_1x1, num_classes, 4, 2, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3), kernel_initializer=tf.truncated_normal_initializer(stddev=0.001))
 
-    # skip conneciton
-    output = tf.add(output, vgg_layer4_out[:,:,:,0:num_classes])
+    # skip conneciton 1
+    skip1 = tf.add(upsample1, layer4_out_scaled[:,:,:,0:num_classes])
 
     # upsample by 2
-    output = tf.layers.conv2d_transpose(output, num_classes, 4, 2, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3))
+    upsample2 = tf.layers.conv2d_transpose(skip1, num_classes, 4, 2, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3), kernel_initializer=tf.truncated_normal_initializer(stddev=0.001))
 
-    # skip connection
-    output = tf.add(output, vgg_layer3_out[:,:,:,0:num_classes])
+    # skip connection 2
+    skip2 = tf.add(upsample2, layer3_out_scaled[:,:,:,0:num_classes])
 
     # upsample by 8
-    output = tf.layers.conv2d_transpose(output, num_classes, 16, 8, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3))
+    output = tf.layers.conv2d_transpose(skip2, num_classes, 16, 8, padding = 'same', kernel_regularizer = tf.contrib.layers.l2_regularizer(1e-3), kernel_initializer=tf.truncated_normal_initializer(stddev=0.001))
 
     return output
 tests.test_layers(layers)
@@ -136,7 +140,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, loss, input_ima
         print("Epoch {} ...".format(epoch + 1))
         t1 = time.time()
         for img, label in get_batches_fn(batch_size):
-            _, _loss = sess.run([train_op, loss], feed_dict = {input_image: img, correct_label: label, keep_prob: 0.5})
+            _, _loss = sess.run([train_op, loss], feed_dict = {input_image: img, correct_label: label, keep_prob: 0.65})
 
             #m_iou = sess.run(mean_iou, feed_dict = {input_image: img, correct_label: label, keep_prob: 1.0})
 
@@ -149,22 +153,6 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, loss, input_ima
     pass
 tests.test_train_nn(train_nn)
 
-"""
-def evaluate(sess):
-
-    for image_file in glob(os.path.join(data_folder, 'image_2', '*.png')):
-        image = scipy.misc.imresize(scipy.misc.imread(image_file), image_shape)
-
-        im_softmax = sess.run(
-            [tf.nn.softmax(logits)],
-            {keep_prob: 1.0, image_pl: [image]})
-        im_softmax = im_softmax[0][:, 1].reshape(image_shape[0], image_shape[1])
-        segmentation = (im_softmax > 0.5).reshape(image_shape[0], image_shape[1], 1)
-    
-    iou = 0
-
-    return iou
-"""
 
 def run():
     num_classes = 2
@@ -195,8 +183,8 @@ def run():
         label = tf.placeholder(tf.float32, (None, None, None, num_classes))
         #keep_prob = tf.placeholder(tf.float32)
         rate = 0.001
-        n_epochs = 2
-        batch_size = 80
+        n_epochs = 20
+        batch_size = 8
 
         input_image, keep, w3, w4, w7 = load_vgg(sess, vgg_path)
 
